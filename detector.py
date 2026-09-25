@@ -17,8 +17,10 @@ class PersonDetector:
         try:
             x1, y1, x2, y2 = map(int, bbox)
             height, width = y2 - y1, x2 - x1
+            area = height * width
             
-            if height < self.config.min_bbox_size or width < self.config.min_bbox_size:
+            if area < 4000 or height < 30 or width < 15:
+                print(f"REJECTED: box too small — height={height}, width={width}, area={area}")
                 return None
                 
             crop = frame[y1:y2, x1:x2]
@@ -39,6 +41,7 @@ class PersonDetector:
         valid_detections = []
         for det in detections.boxes.data:
             x1, y1, x2, y2, conf, _ = det
+            print(f"YOLO found a box with confidence: {conf:.2f}")
             if conf < self.config.detection_conf_threshold:
                 continue
             

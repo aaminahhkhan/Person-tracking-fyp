@@ -2,3 +2,10 @@
 venv
 __pycache__
 reid_database.json
+
+# Large binary model files (too large for plain git push — store separately)
+*.onnx
+*.pt
+*.pth
+*.weights
+*.bin

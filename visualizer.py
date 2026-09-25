@@ -8,8 +8,13 @@ class Visualizer:
             x1, y1, x2, y2 = map(int, bbox)
             if obj_id is not None:
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(frame, f"ID: {obj_id}", (x1, y1-10),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                label = f"ID: {obj_id}"
+                text_size, baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
+                label_y = max(y1 + text_size[1] + 5, text_size[1] + 5)
+                cv2.rectangle(frame, (x1, label_y - text_size[1] - 5),
+                              (x1 + text_size[0] + 5, label_y + baseline), (0, 0, 0), -1)
+                cv2.putText(frame, label, (x1 + 2, label_y),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
             else:
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
                 cv2.putText(frame, "Waiting...", (x1, y1-10),

@@ -1,5 +1,6 @@
 # main.py
 import cv2
+import re
 from pathlib import Path
 
 from config import ReIDConfig
@@ -26,69 +27,69 @@ def main():
     # Initialize components
     feature_manager = FeatureManager(config)
     detector = PersonDetector(config)
-    tracker = PersonTracker(config, feature_manager)
-    display_id_map = {}
-    next_display_id = [1]
-
-    def get_display_id(real_id):
-        if real_id not in display_id_map:
-            display_id_map[real_id] = next_display_id[0]
-            next_display_id[0] += 1
-        return display_id_map[real_id]
-
-    # Video setup
-    video_path = Path('./videos/1.mp4')
-    output_path = Path('output.mp4')
-
-    if not video_path.exists():
-        raise FileNotFoundError(f"Video file not found: {video_path}")
-
-    cap = cv2.VideoCapture(str(video_path))
-    if not cap.isOpened():
-        raise RuntimeError(f"Could not open video: {video_path}")
-
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
-
-    out = cv2.VideoWriter(
-        str(output_path),
-        cv2.VideoWriter_fourcc(*'mp4v'),
-        fps,
-        (width, height)
+    video_dir = Path('videos')
+    video_paths = sorted(
+        (
+            path for path in video_dir.iterdir()
+            if path.is_file() and path.suffix.lower() in {'.mp4', '.mov', '.avi', '.mkv'}
+        ),
+        key=lambda path: [
+            int(part) if part.isdigit() else part.lower()
+            for part in re.split(r'(\d+)', path.name)
+        ]
     )
-    if not out.isOpened():
-        raise RuntimeError(f"Could not initialize output video writer: {output_path}")
+    if not video_paths:
+        raise FileNotFoundError(f"No video files found in: {video_dir}")
 
-    frame_id = 0
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
+    for camera_id, video_path in enumerate(video_paths, start=1):
+        tracker = PersonTracker(config, feature_manager)
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            raise RuntimeError(f"Could not open video for camera {camera_id}: {video_path}")
 
-            # Process frame
-            valid_detections = detector.detect(frame)
-            results = tracker.process_detections(valid_detections, frame_id)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
+        output_path = Path(f'output_camera_{camera_id}.mp4')
+        out = cv2.VideoWriter(
+            str(output_path),
+            cv2.VideoWriter_fourcc(*'mp4v'),
+            fps,
+            (width, height)
+        )
+        if not out.isOpened():
+            cap.release()
+            raise RuntimeError(f"Could not initialize output video writer: {output_path}")
 
-            # Visualize results
-            display_results = [
-                (bbox, get_display_id(obj_id) if obj_id is not None else None)
-                for bbox, obj_id in results
-            ]
-            frame = Visualizer.draw_results(frame, display_results)
+        frame_id = 0
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
 
-            out.write(frame)
-            cv2.imshow('Frame', frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+                valid_detections = detector.detect(frame)
+                results = tracker.process_detections(valid_detections, frame_id, camera_id)
+                frame = Visualizer.draw_results(frame, results)
+                out.write(frame)
 
-            frame_id += 1
-    finally:
-        cap.release()
-        out.release()
-        cv2.destroyAllWindows()
-        feature_manager.save_database()
+                cv2.imshow(f'Camera {camera_id}', frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+
+                frame_id += 1
+        finally:
+            cap.release()
+            out.release()
+            cv2.destroyWindow(f'Camera {camera_id}')
+
+    feature_manager.save_database()
+
+    print('\nGlobal ID | Cameras seen in | Total embeddings')
+    print('----------+-----------------+-----------------')
+    for global_id, entries in sorted(feature_manager.feature_db.items()):
+        cameras = sorted({entry['camera_id'] for entry in entries if entry['camera_id'] is not None})
+        print(f"{global_id:9} | {', '.join(map(str, cameras)) or 'unknown':15} | {len(entries):16}")
 
 
 if __name__ == "__main__":

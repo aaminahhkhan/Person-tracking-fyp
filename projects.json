@@ -1,0 +1,32 @@
+[
+  {
+    "name": "room",
+    "camera_count": 4,
+    "assignments": [
+      {
+        "camera_id": 1,
+        "filename": "camera_000001.mp4",
+        "source_folder": "room",
+        "source_filename": "1.mp4"
+      },
+      {
+        "camera_id": 2,
+        "filename": "camera_000002.mp4",
+        "source_folder": "room",
+        "source_filename": "2.mp4"
+      },
+      {
+        "camera_id": 3,
+        "filename": "camera_000003.avi",
+        "source_folder": "room",
+        "source_filename": "3.avi"
+      },
+      {
+        "camera_id": 4,
+        "filename": "camera_000004.avi",
+        "source_folder": "room",
+        "source_filename": "4.avi"
+      }
+    ]
+  }
+]

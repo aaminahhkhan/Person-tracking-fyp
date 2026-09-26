@@ -9,3 +9,5 @@ reid_database.json
 *.pth
 *.weights
 *.bin
+
+projects/*/outputs/

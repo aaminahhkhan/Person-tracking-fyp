@@ -1,7 +1,11 @@
 # main.py
+import argparse
 import cv2
 import re
 from pathlib import Path
+from urllib.error import URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from config import ReIDConfig
 from detector import PersonDetector
@@ -10,7 +14,40 @@ from tracker import PersonTracker
 from visualizer import Visualizer
 
 
+def publish_live_frame(endpoint, camera_id, frame):
+    encoded_successfully, encoded_frame = cv2.imencode(
+        '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 75]
+    )
+    if not encoded_successfully:
+        return
+
+    request = Request(
+        f'{endpoint}?{urlencode({"camera_id": camera_id})}',
+        data=encoded_frame.tobytes(),
+        headers={'Content-Type': 'image/jpeg'},
+        method='POST'
+    )
+    try:
+        with urlopen(request, timeout=1):
+            pass
+    except (OSError, URLError):
+        pass
+
+
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--project', required=True, help='Project name under projects/')
+    parser.add_argument('--live-frame-url', help='Local endpoint for publishing annotated preview frames')
+    args = parser.parse_args()
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', args.project):
+        parser.error('project name must start with a letter or number and contain only letters, numbers, underscores, or hyphens')
+
+    project_dir = Path(__file__).resolve().parent / 'projects' / args.project
+    video_dir = project_dir / 'videos'
+    output_dir = project_dir / 'outputs'
+    video_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     # Configuration
     config = ReIDConfig(
         yolo_model='./models/yolov8n.pt',
@@ -25,9 +62,8 @@ def main():
     )
 
     # Initialize components
-    feature_manager = FeatureManager(config)
+    feature_manager = FeatureManager(config, db_path=project_dir / 'reid_database.json')
     detector = PersonDetector(config)
-    video_dir = Path('videos')
     video_paths = sorted(
         (
             path for path in video_dir.iterdir()
@@ -50,7 +86,7 @@ def main():
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
-        output_path = Path(f'output_camera_{camera_id}.mp4')
+        output_path = output_dir / f'output_camera_{camera_id}.mp4'
         out = cv2.VideoWriter(
             str(output_path),
             cv2.VideoWriter_fourcc(*'mp4v'),
@@ -72,16 +108,13 @@ def main():
                 results = tracker.process_detections(valid_detections, frame_id, camera_id)
                 frame = Visualizer.draw_results(frame, results)
                 out.write(frame)
-
-                cv2.imshow(f'Camera {camera_id}', frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
+                if args.live_frame_url:
+                    publish_live_frame(args.live_frame_url, camera_id, frame)
 
                 frame_id += 1
         finally:
             cap.release()
             out.release()
-            cv2.destroyWindow(f'Camera {camera_id}')
 
     feature_manager.save_database()
 

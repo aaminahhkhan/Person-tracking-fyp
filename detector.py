@@ -3,6 +3,7 @@ from ultralytics import YOLO
 from torchreid.utils import FeatureExtractor
 import numpy as np
 from config import ReIDConfig
+from utils import calculate_iou
 
 class PersonDetector:
     def __init__(self, config: ReIDConfig):
@@ -38,14 +39,27 @@ class PersonDetector:
     def detect(self, frame):
         detections = self.yolo(frame, classes=0)[0]
         
-        valid_detections = []
+        raw_boxes = []
         for det in detections.boxes.data:
             x1, y1, x2, y2, conf, _ = det
-            print(f"YOLO found a box with confidence: {conf:.2f}")
             if conf < self.config.detection_conf_threshold:
                 continue
-            
-            bbox = [x1, y1, x2, y2]
+            raw_boxes.append(([float(x1), float(y1), float(x2), float(y2)], float(conf)))
+
+        # Remove duplicate boxes on the same real person (heavily overlapping boxes)
+        raw_boxes.sort(key=lambda item: item[1], reverse=True)
+        deduped_boxes = []
+        for bbox, conf in raw_boxes:
+            is_duplicate = False
+            for kept_bbox, _ in deduped_boxes:
+                if calculate_iou(bbox, kept_bbox) > 0.5:
+                    is_duplicate = True
+                    break
+            if not is_duplicate:
+                deduped_boxes.append((bbox, conf))
+
+        valid_detections = []
+        for bbox, conf in deduped_boxes:
             features = self.extract_features(frame, bbox)
             if features is not None:
                 valid_detections.append((bbox, features))

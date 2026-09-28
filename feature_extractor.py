@@ -74,26 +74,37 @@ class FeatureManager:
         except Exception as e:
             print(f"Warning: Could not save database ({str(e)})")
 
-    def match_features(self, query_features, min_similarity=None):
+    def match_features(self, query_features, min_similarity=None, exclude_ids=None, margin=0.00):
         query_vector = np.asarray(query_features, dtype=np.float32)
         if min_similarity is None:
             min_similarity = self.config.feature_match_threshold
+        exclude_ids = exclude_ids or set()
 
-        max_similarity = 0.0
-        matched_id = None
+        best_similarity = 0.0
+        best_id = None
+        second_best_similarity = 0.0
 
         for obj_id, entries in self.feature_db.items():
+            if obj_id in exclude_ids:
+                continue
+            obj_best = 0.0
             for entry in entries:
-                features = entry['feature']
-                similarity = float(np.dot(query_vector, np.asarray(features, dtype=np.float32)))
-                if similarity > max_similarity:
-                    max_similarity = similarity
-                    matched_id = obj_id
+                similarity = float(np.dot(query_vector, np.asarray(entry['feature'], dtype=np.float32)))
+                obj_best = max(obj_best, similarity)
+            if obj_best > best_similarity:
+                second_best_similarity = best_similarity
+                best_similarity = obj_best
+                best_id = obj_id
+            elif obj_best > second_best_similarity:
+                second_best_similarity = obj_best
 
-        if max_similarity < min_similarity:
-            return None, max_similarity
+        if best_similarity < min_similarity:
+            return None, best_similarity
 
-        return matched_id, max_similarity
+        if best_similarity - second_best_similarity < margin:
+            return None, best_similarity
+
+        return best_id, best_similarity
 
     def update_feature_array(self, obj_id, new_features, camera_id):
         if obj_id not in self.feature_db:

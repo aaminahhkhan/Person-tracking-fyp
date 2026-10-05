@@ -35,23 +35,8 @@ class PersonTracker:
         results = []
         current_detection_count = len(valid_detections)
         detection_count_changed = self.check_detection_count_change(current_detection_count, frame_id)
-        
-        self.update_missing_tracks()
 
-        if not self.feature_manager.feature_db and valid_detections:
-            used_ids_this_frame = set()
-            for bbox, features in valid_detections:
-                new_id = self.feature_manager.get_next_id()
-                used_ids_this_frame.add(new_id)
-                self.feature_manager.update_feature_array(new_id, features, camera_id)
-                self.detection_history[new_id] = {
-                    'bbox': bbox,
-                    'features': features,
-                    'camera_id': camera_id,
-                    'frames_missing': 0
-                }
-                results.append((bbox, new_id))
-            return results
+        self.update_missing_tracks()
 
         if self.is_in_waiting_period:
             results.extend(self._process_waiting_period(valid_detections, frame_id, camera_id))
@@ -85,11 +70,10 @@ class PersonTracker:
             if len(det_history) >= self.config.waiting_frames * 0.8:
                 avg_features = np.mean([d['features'] for d in det_history], axis=0)
                 avg_features = avg_features / np.linalg.norm(avg_features)
-                
-                matched_id, similarity = self.feature_manager.match_features(avg_features, exclude_ids=used_ids_this_batch)
-                if matched_id is None:
-                    matched_id = self.feature_manager.get_next_id()
-                
+
+                matched_id, similarity = self.feature_manager.match_or_create(avg_features, exclude_ids=used_ids_this_batch)
+                print(f"Camera {camera_id}: best similarity = {similarity:.2f}, assigned ID: {matched_id}")
+
                 used_ids_this_batch.add(matched_id)
                 self.feature_manager.update_feature_array(matched_id, avg_features, camera_id)
                 latest_detection = det_history[-1]
@@ -100,7 +84,7 @@ class PersonTracker:
                     'frames_missing': 0
                 }
                 results.append((latest_detection['bbox'], matched_id))
-        
+
         self.waiting_detections.clear()
         return results
 
@@ -154,9 +138,7 @@ class PersonTracker:
         self.feature_manager.update_feature_array(track_id, features, camera_id)
 
     def _create_new_track(self, bbox, features, camera_id, used_ids=None):
-        matched_id, similarity = self.feature_manager.match_features(features, exclude_ids=used_ids)
-        if matched_id is None:
-            matched_id = self.feature_manager.get_next_id()
-            
+        matched_id, similarity = self.feature_manager.match_or_create(features, exclude_ids=used_ids)
+        print(f"Camera {camera_id}: best similarity = {similarity:.2f}, assigned ID: {matched_id}")
         self._update_track(matched_id, bbox, features, camera_id)
         return matched_id

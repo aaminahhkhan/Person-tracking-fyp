@@ -37,7 +37,7 @@ class PersonDetector:
             return None
 
     def detect(self, frame):
-        detections = self.yolo(frame, classes=0)[0]
+        detections = self.yolo(frame, classes=0, verbose=False)[0]
         
         raw_boxes = []
         for det in detections.boxes.data:

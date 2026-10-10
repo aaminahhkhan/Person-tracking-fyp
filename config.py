@@ -3,7 +3,8 @@ from dataclasses import dataclass
 @dataclass
 class ReIDConfig:
     # Model paths and device
-    yolo_model: str = 'yolov8s.pt'
+    # Previous weights: yolov8s.pt by default; ./models/yolov8n.pt in main.py/live_main.py.
+    yolo_model: str = 'yolo26s.pt'
     reid_model: str = 'osnet_ain_x1_0'
     device: str = 'cpu'
     

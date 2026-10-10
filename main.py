@@ -224,7 +224,7 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     config = ReIDConfig(
-        yolo_model='./models/yolov8n.pt',
+        yolo_model='yolo26n.pt',
         reid_model='osnet_ain_x1_0',
         device='cpu',
         waiting_frames=5,

@@ -14,8 +14,8 @@ from visualizer import Visualizer
 
 # ---- EDIT THESE: use the /shot.jpg link instead of /video for each phone ----
 CAMERA_URLS = {
-    1: "http://192.168.0.106:8080/shot.jpg",
-    2: "http://192.168.0.102:8080/shot.jpg",
+    1: "http://10.0.68.234:8080/shot.jpg",
+    2: "http://10.0.66.169:8080/shot.jpg"
 }
 # -------------------------------------------------------------------------
 
@@ -98,7 +98,7 @@ def display_loop():
 
 def main():
     config = ReIDConfig(
-        yolo_model='./models/yolov8n.pt',
+        yolo_model='yolo26n.pt',
         reid_model='osnet_ain_x1_0',
         device='cpu',
         waiting_frames=5,

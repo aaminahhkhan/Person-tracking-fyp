@@ -5,17 +5,16 @@ from urllib.request import urlopen
 
 import cv2
 import numpy as np
-
+import torch
 from config import ReIDConfig
 from detector import PersonDetector
-from feature_extractor import FeatureManager
-from tracker import PersonTracker
+from live_tracker import GlobalIdentities, LiveTracker
 from visualizer import Visualizer
 
 # ---- EDIT THESE: use the /shot.jpg link instead of /video for each phone ----
 CAMERA_URLS = {
-    1: "http://10.0.68.234:8080/shot.jpg",
-    2: "http://10.0.66.169:8080/shot.jpg"
+    1: "http://10.0.66.169:8080/shot.jpg",
+    2: 0,
 }
 # -------------------------------------------------------------------------
 
@@ -27,17 +26,35 @@ latest_frames = {}
 frames_lock = threading.Lock()
 
 
-def fetch_snapshot(url):
-    with urlopen(url, timeout=2) as response:
-        data = response.read()
-    arr = np.frombuffer(data, dtype=np.uint8)
-    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+# def fetch_snapshot(url):
+#     with urlopen(url, timeout=2) as response:
+#         data = response.read()
+#     arr = np.frombuffer(data, dtype=np.uint8)
+#     frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+#     return frame
+captures = {}
+
+def fetch_snapshot(source):
+    if isinstance(source, str) and source.startswith("http"):
+        with urlopen(source, timeout=2) as response:
+            data = response.read()
+        return cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+    # laptop webcam (0) or a video file path
+    cap = captures.get(source)
+    if cap is None:
+        cap = cv2.VideoCapture(source)        
+        captures[source] = cap
+    ok, frame = cap.read()
+    if not ok:
+        if isinstance(source, str):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # loop the video
+        return None
     return frame
 
 
-def run_camera(camera_id, url, config, feature_manager):
+def run_camera(camera_id, url, config, identities):
     detector = PersonDetector(config)
-    tracker = PersonTracker(config, feature_manager)
+    tracker = LiveTracker(config, identities, camera_id)
 
     frame_id = 0
     known_before = set()
@@ -55,14 +72,11 @@ def run_camera(camera_id, url, config, feature_manager):
         scale = PROCESS_WIDTH / w
         small = cv2.resize(frame, (PROCESS_WIDTH, int(h * scale)))
 
-        raw_detections = detector.detect(small)
+        # track on the small frame (so size rules are consistent), show on the full frame
+        results_small = tracker.update(detector.detect_full(small), frame_id, small.shape)
         scale_back = 1 / scale
-        detections = [
-            ([x1 * scale_back, y1 * scale_back, x2 * scale_back, y2 * scale_back], feat)
-            for (x1, y1, x2, y2), feat in raw_detections
-        ]
-
-        results = tracker.process_detections(detections, frame_id, camera_id)
+        results = [((x1 * scale_back, y1 * scale_back, x2 * scale_back, y2 * scale_back), tid)
+                   for (x1, y1, x2, y2), tid in results_small]
         display_frame = Visualizer.draw_results(frame, results)
 
         with frames_lock:
@@ -97,25 +111,14 @@ def display_loop():
 
 
 def main():
-    config = ReIDConfig(
-        yolo_model='yolo26n.pt',
-        reid_model='osnet_ain_x1_0',
-        device='cpu',
-        waiting_frames=5,
-        max_features_per_id=10,
-        min_bbox_size=100,
-        iou_threshold=0.4,
-        feature_match_threshold=0.65,
-        max_frames_missing=40
-    )
-    from pathlib import Path
-    feature_manager = FeatureManager(config, db_path=Path('live_reid_database.json'))
-    feature_manager.feature_db = {}
-    feature_manager.next_id = 1
+    # ALL thresholds live in config.py now. Only the model names are chosen here.
+    torch.set_num_threads(4)
+    config = ReIDConfig(yolo_model='yolo26n.pt', device='cpu')
+    identities = GlobalIdentities(config)
 
     threads = []
     for camera_id, url in CAMERA_URLS.items():
-        t = threading.Thread(target=run_camera, args=(camera_id, url, config, feature_manager), daemon=True)
+        t = threading.Thread(target=run_camera, args=(camera_id, url, config, identities), daemon=True)
         t.start()
         threads.append(t)
 
@@ -125,11 +128,10 @@ def main():
     for t in threads:
         t.join(timeout=2)
 
-    feature_manager.save_database()
     print("\nStopped. Final known people:")
-    for obj_id, entries in sorted(feature_manager.feature_db.items()):
-        cameras = sorted({e['camera_id'] for e in entries})
-        print(f"  ID {obj_id}: seen in camera(s) {cameras}")
+    for gid, cams in sorted(identities.protos.items()):
+        if gid not in identities.redirect:
+            print(f"  ID {gid}: seen in camera(s) {sorted(cams)}")
 
 
 if __name__ == "__main__":
